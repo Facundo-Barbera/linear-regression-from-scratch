@@ -1,1 +1,1 @@
-# Implementación de Regressión Lineal desde Cero con Python
+# Implementación de Regresión Lineal desde Cero con Python
