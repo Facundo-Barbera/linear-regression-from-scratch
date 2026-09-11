@@ -1,0 +1,3 @@
+Modelo,beta_AT,beta_V,beta_AP,beta_RH,b,R2 prueba
+Manual (GD),-1.9819,-0.2374,0.0555,-0.1592,461.6212,0.9319
+scikit-learn (OLS),-1.9819,-0.2374,0.0555,-0.1592,461.6212,0.9319

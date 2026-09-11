@@ -16,6 +16,7 @@ class LinearRegression:
         self.bias = randint(0, 10) if bias is None else bias
         self.learning_rate = self._auto_learning_rate() if learning_rate is None else learning_rate
         self.epochs = epochs
+        self.loss_history: List[float] = []
         self.status = 'initialized'
 
     # Public methods #
@@ -36,14 +37,17 @@ class LinearRegression:
     def _predict(self, x_data: List | None = None):
         x_data = x_data if x_data else self.data[0]
         y_pred = []
-        for i in range(len(x_data)):
-            for j in range(len(x_data[i])):
-                y_pred.append(self.betas[i] * x_data[i][j] + self.bias)
+        for j in range(len(x_data[0])):
+            total = self.bias
+            for i in range(len(x_data)):
+                total += self.betas[i] * x_data[i][j]
+            y_pred.append(total)
         return y_pred
 
     def _fit(self):
         for epoch in range(self.epochs):
             y_pred = self._predict()
+            self.loss_history.append(self._mse(self.data[1], y_pred))
             self._adjust_betas_bias(y_pred)
 
         self.status = 'fitted'

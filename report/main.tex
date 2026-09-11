@@ -1,0 +1,293 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+%Template version as of 6/27/2024
+
+\usepackage[utf8]{inputenc}
+% es-nodecimaldot: sin esto, babel-spanish convierte el punto decimal en coma
+% dentro de modo matemático, y las tablas mezclan "-14,7187" con "0.3253".
+\usepackage[spanish,es-nodecimaldot]{babel}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\graphicspath{{./}{report/}{modulo_2/linear-regression-from-scratch/report/}}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+
+\title{Implementación de Regresión Lineal Múltiple desde Cero mediante Descenso de Gradiente}
+
+\author{\IEEEauthorblockN{Facundo Bautista Barbera}
+\IEEEauthorblockA{\textit{Escuela de Ingeniería y Ciencias} \\
+\textit{Instituto Tecnológico y de Estudios Superiores de Monterrey}\\
+A01066843@tec.mx}
+}
+
+\maketitle
+
+\begin{abstract}
+Este reporte presenta un modelo de regresión lineal múltiple implementado con Python base y entrenado con gradiente descendente, sin el uso de frameworks o librerías de machine learning. El modelo está entrenado y evaluado en el dataset de ``Combined Cycle Power Plant'' del UCI Machine Learning Repository, el cual contiene 9,527 instancias que representan horas de la operación de la planta en su máxima capacidad, y predice la salida de energía eléctrica neta a partir de 4 variables ambientales. El reporte describe el proceso de limpieza de datos, las matemáticas del modelo, la estandarización de las variables de entrada y el proceso de selección automática de la velocidad de aprendizaje. El modelo resultante explica el 93.19\% de la varianza en el set de pruebas con $R^2$ de 0.9319 y RMSE de 4.43 MW, alcanzando coeficientes idénticos a los generados con una referencia de implementación con scikit-learn como método de comparación. Se documentó un proceso de validación cruzada, obteniendo un $R^2$ de $0.9283 \pm 0.0020$, confirmando que el resultado no depende de una partición particular. Un Random Forest entrenado con los mismos datos obtuvo un score más elevado, con $R^2$ de 0.9616. También se analizaron los efectos que tienen diferentes tasas de aprendizaje y número de épocas sobre la convergencia.
+\end{abstract}
+
+\begin{IEEEkeywords}
+regresión lineal múltiple, descenso de gradiente, MSE, estandarización, aprendizaje máquina, Python, hiperparámetros
+\end{IEEEkeywords}
+
+\section{Introducción}
+\label{sec:intro}
+La regresión lineal es uno de los modelos fundamentales del machine learning supervisado, y es el punto de inicio para entender cómo un modelo aprende de los datos. Frameworks modernos como scikit-learn resuelven los problemas en una función, lo cual hace que sea muy fácil de aplicar pero esconde el proceso que realmente produce el resultado. Implementar el algoritmo sin librerías especializadas fuerza a uno a entender cada componente que esos frameworks abstraen: las funciones de hipótesis, las funciones de costo, el gradiente del costo con respecto a los parámetros, y las reglas que llevan a un modelo al óptimo. 
+
+El objetivo de este trabajo es implementar un modelo de regresión lineal múltiple en Python base, es decir sin librerías externas ni frameworks, entrenarlo con gradiente descendente en un dataset real, y validar su comportamiento contra un punto de referencia. El problema que se seleccionó es la predicción de la salida de electricidad de una planta de energía usando variables que corresponden a las condiciones ambientales de operación.
+
+El reporte está organizado de la siguiente forma: La sección~\ref{sec:dataset} describe el dataset y sus variables. La sección~\ref{sec:etl} cubre la extracción, limpieza y transformación de los datos. La sección~\ref{sec:modelo} presenta las matemáticas del modelo y su implementación. La sección~\ref{sec:resultados} reporta los resultados del caso base. La sección~\ref{sec:diagnostico} diagnostica el modelo en términos de sesgo y varianza. La sección~\ref{sec:comparacion} compara la implementación manual contra la de scikit-learn. La sección~\ref{sec:hiperparametros} analiza el efecto de hiperparámetros. Y la sección~\ref{sec:conclusiones} presenta las conclusiones.
+
+\section{Descripción del dataset}
+\label{sec:dataset}
+Este estudio usa el dataset ``Combined Cycle Power Plant'' o CCPP, obtenido de UCI Machine Learning Repository, y tiene datos de 6 años (2006 a 2011) de una planta eléctrica operando a capacidad máxima. Cada instancia representa las condiciones de operación de la planta promediadas por hora, es decir cada instancia representa una hora promedio de operación, descrita por 4 variables de ambiente: ambient temperature (AT, °C), exhaust vacuum (V, cm Hg), ambient pressure (AP, mbar) y relative humidity (RH, \%), y la salida de energía eléctrica neta (PE, MW), la cual será nuestra variable objetivo. El archivo de datos contiene 9,568 instancias y 9,527 instancias después de limpiar. La Tabla~\ref{tab:descriptiva} tiene el resumen de las variables.
+
+Las 4 variables ambientales se usan como features predictoras. La ambient temperature es la variable con más relación a la variable objetivo, con un valor de Pearson de -0.948, exhaust vacuum es la segunda variable más correlacionada con un valor de -0.870, ambas variables con una correlación negativa, es decir, si el valor de estas es más alto el resultado del modelo debería ser más bajo. Las variables ``ambient pressure'' (+0.519) y ``relative humidity'' (+0.391) contribuyen al modelo pero en un porcentaje menor y con relación positiva. La Figura~\ref{fig:correlacion} muestra la matriz de correlación completa, donde se observa que AT y V también están fuertemente correlacionadas entre sí (+0.844), ya que ambas reflejan el punto térmico de operación de la planta. La Figura~\ref{fig:histogramas} muestra la distribución de cada variable. Las relaciones dominantes son claramente lineales: una mayor temperatura de admisión reduce la eficiencia de la turbina, por lo que la planta genera menos potencia. Este comportamiento justifica modelar el problema con una regresión lineal múltiple.
+
+\begin{table}[htbp]
+\caption{Estadística descriptiva de las variables ($n = 9\,527$)}
+\label{tab:descriptiva}
+\centering
+\begin{tabular}{lcccc}
+\toprule
+Variable & Media & Desv. est. & Mínimo & Máximo \\
+\midrule
+AT (\textdegree C) & 19.65 & 7.45 & 1.81 & 37.11 \\
+V (cm Hg) & 54.31 & 12.71 & 25.36 & 81.56 \\
+AP (mbar) & 1013.26 & 5.94 & 992.89 & 1033.30 \\
+RH (\%) & 73.31 & 14.60 & 25.56 & 100.16 \\
+PE (MW) & 454.37 & 17.07 & 420.26 & 495.76 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{figures/correlacion.png}
+\caption{Matriz de correlación entre las variables.}
+\label{fig:correlacion}
+\end{figure}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{figures/histogramas.png}
+\caption{Distribución de cada variable del conjunto de datos.}
+\label{fig:histogramas}
+\end{figure}
+
+\section{Extracción, limpieza y transformación de datos}
+\label{sec:etl}
+\subsection{Limpieza}
+El dataset no contiene valores faltantes en ninguna de las 5 columnas, no hubo necesidad de hacer imputación. Lo que sí contiene son 41 instancias duplicadas, donde las 5 variables coinciden y fueron removidas, reduciendo las instancias del dataset de 9,568 a 9,527, lo cual representa un 0.43\% del total. 
+
+Quitar las instancias tiene importancia por dos motivos. Primero, instancias repetidas se cuenta más de una vez cuando se cuenta el costo computacional, lo cual aumenta las condiciones donde hay pesos arbitrario y el peso adicional no corresponde a ninguna medida única. Segundo, la fila duplicada puede ser asignada al set de entrenamiento y la copia al set de testing, lo cual haría que el desempeño del modelo no se vea reflejado en datos que no ha visto. 
+
+No se removieron valores ``outlier''. Inspeccionando las distribuciones se encontró que todos los valores caen dentro de rangos posibles para la operación de la planta, entonces no hay ninguna razón para considerar errores de medición.
+\subsection{Transformaciones}
+[transformaciones]
+
+\begin{equation}
+z_{ij} = \frac{x_{ij} - \mu_i}{\sigma_i}
+\label{eq:estandarizacion}
+\end{equation}
+
+\subsection{Partición de los datos}
+[particion]
+
+\section{Modelo: regresión lineal múltiple sin framework}
+\label{sec:modelo}
+
+\subsection{Función de hipótesis}
+[hipotesis]
+\begin{equation}
+\hat{y}_j = b + \sum_{i=1}^{p} \beta_i \, x_{ij}
+\label{eq:modelo}
+\end{equation}
+
+\subsection{Función de costo}
+[costo]
+\begin{equation}
+\mathrm{MSE} = \frac{1}{n} \sum_{j=1}^{n} \left( \hat{y}_j - y_j \right)^2
+\label{eq:mse}
+\end{equation}
+
+\subsection{Función de optimización: descenso de gradiente}
+[optimizacion]
+\begin{align}
+\beta_i &\leftarrow \beta_i - \frac{\alpha}{n} \sum_{j=1}^{n} \left( \hat{y}_j - y_j \right) x_{ij} \label{eq:update-beta}\\
+b &\leftarrow b - \frac{\alpha}{n} \sum_{j=1}^{n} \left( \hat{y}_j - y_j \right) \label{eq:update-bias}
+\end{align}
+
+\subsection{Selección automática de la tasa de aprendizaje}
+[tasa\_aprendizaje]
+\begin{equation}
+\alpha = \frac{1}{1 + \sum_{i=1}^{p} \frac{1}{n}\sum_{j=1}^{n} x_{ij}^2}
+\label{eq:auto-lr}
+\end{equation}
+
+\subsection{Implementación}
+[implementacion]
+
+\section{Resultados y visualización del caso base}
+\label{sec:resultados}
+[resultados]
+
+\begin{table}[htbp]
+\caption{Coeficientes estimados ($\alpha$ automática $= 0.2$, 10\,000 épocas)}
+\label{tab:coeficientes}
+\centering
+\begin{tabular}{lcc}
+\toprule
+Variable & $\beta$ (datos estandarizados) & $\beta$ (unidades originales) \\
+\midrule
+AT & $-14.7187$ & $-1.9819$ \\
+V & $-3.0113$ & $-0.2374$ \\
+AP & 0.3253 & 0.0555 \\
+RH & $-2.3582$ & $-0.1592$ \\
+$b$ (intercepto) & 454.1180 & 461.6212 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\caption{Métricas del modelo manual}
+\label{tab:metricas}
+\centering
+\begin{tabular}{lccc}
+\toprule
+Métrica & Entrenamiento & Validación & Prueba \\
+\midrule
+MSE & 20.15 & 23.82 & 19.65 \\
+RMSE & 4.489 & 4.881 & 4.433 \\
+MAE & 3.607 & 3.707 & 3.584 \\
+$R^2$ & 0.9306 & 0.9184 & 0.9319 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{figures/ajuste.png}
+\caption{Valores predichos frente a valores reales en el conjunto de prueba.}
+\label{fig:ajuste}
+\end{figure}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{figures/perdida.png}
+\caption{Evolución del MSE de entrenamiento por época (ejes logarítmicos).}
+\label{fig:perdida}
+\end{figure}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{figures/residuos.png}
+\caption{Residuos en el conjunto de prueba.}
+\label{fig:residuos}
+\end{figure}
+
+\section{Diagnóstico del modelo}
+\label{sec:diagnostico}
+[diagnostico]
+
+\begin{table}[htbp]
+\caption{Validación cruzada de 5 particiones sobre el conjunto completo}
+\label{tab:cv}
+\centering
+\begin{tabular}{lcc}
+\toprule
+Modelo & RMSE (media $\pm$ desv.) & $R^2$ (media $\pm$ desv.) \\
+\midrule
+Regresión lineal & $4.5603 \pm 0.0628$ & $0.9283 \pm 0.0020$ \\
+Árbol (profundidad 3) & $5.1801 \pm 0.0565$ & $0.9075 \pm 0.0026$ \\
+Random Forest & $3.3395 \pm 0.0993$ & $0.9616 \pm 0.0019$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Comparación con framework}
+\label{sec:comparacion}
+[comparacion]
+
+\begin{table}[htbp]
+\caption{Modelo manual vs scikit-learn (unidades originales)}
+\label{tab:comparacion}
+\centering
+\begin{tabular}{lccc}
+\toprule
+Parámetro & Manual (GD) & scikit-learn (OLS) & Diferencia \\
+\midrule
+$\beta_{AT}$ & $-1.9819$ & $-1.9819$ & 0 \\
+$\beta_{V}$ & $-0.2374$ & $-0.2374$ & 0 \\
+$\beta_{AP}$ & 0.0555 & 0.0555 & 0 \\
+$\beta_{RH}$ & $-0.1592$ & $-0.1592$ & 0 \\
+$b$ & 461.6212 & 461.6212 & 0 \\
+$R^2$ prueba & 0.9319 & 0.9319 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Ajuste de hiperparámetros}
+\label{sec:hiperparametros}
+[hiperparametros]
+
+\begin{table}[htbp]
+\caption{Efecto de la tasa de aprendizaje (2\,000 épocas)}
+\label{tab:lr}
+\centering
+\begin{tabular}{lccc}
+\toprule
+$\alpha$ & MSE final entren. & RMSE val. & $R^2$ val. \\
+\midrule
+0.001 & 3775.768 & 61.579 & $-11.9832$ \\
+0.01 & 20.722 & 4.927 & 0.9169 \\
+0.05 & 20.147 & 4.881 & 0.9184 \\
+auto (0.2) & 20.147 & 4.881 & 0.9184 \\
+0.5 & 20.147 & 4.881 & 0.9184 \\
+0.9 & diverge & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\caption{Efecto del número de épocas ($\alpha$ automática)}
+\label{tab:epocas}
+\centering
+\begin{tabular}{lccc}
+\toprule
+Épocas & MSE entren. & MSE val. & $R^2$ val. \\
+\midrule
+100 & 20.698 & 24.251 & 0.9170 \\
+500 & 20.147 & 23.825 & 0.9184 \\
+1\,000 & 20.147 & 23.825 & 0.9184 \\
+2\,000 & 20.147 & 23.825 & 0.9184 \\
+5\,000 & 20.147 & 23.825 & 0.9184 \\
+10\,000 & 20.147 & 23.825 & 0.9184 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{figures/lr_sweep.png}
+\caption{Convergencia del MSE de entrenamiento según la tasa de aprendizaje (2000 épocas; la curva divergente se omite).}
+\label{fig:lrsweep}
+\end{figure}
+
+\section{Conclusiones}
+\label{sec:conclusiones}
+[conclusiones]
+
+\begin{thebibliography}{00}
+\bibitem{b1} G. James, D. Witten, T. Hastie y R. Tibshirani, \textit{An Introduction to Statistical Learning}. Springer, 2021.
+\bibitem{b2} I. Goodfellow, Y. Bengio y A. Courville, \textit{Deep Learning}. MIT Press, 2016.
+\bibitem{b3} P. Tüfekci, ``Prediction of full load electrical power output of a base load operated combined cycle power plant using machine learning methods,'' \textit{International Journal of Electrical Power \& Energy Systems}, vol. 60, pp. 126--140, 2014.
+\bibitem{b4} Combined Cycle Power Plant, UCI Machine Learning Repository: \url{https://archive.ics.uci.edu/dataset/294/combined+cycle+power+plant}
+\bibitem{b5} Repositorio del proyecto: \url{https://github.com/Facundo-Barbera/linear-regression-from-scratch}
+\end{thebibliography}
+
+\end{document}

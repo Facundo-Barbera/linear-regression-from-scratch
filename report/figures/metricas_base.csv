@@ -1,0 +1,4 @@
+Conjunto,MSE,RMSE,MAE,R2
+Entrenamiento,20.1468,4.4885,3.6069,0.9306
+Validación,23.825,4.8811,3.7072,0.9184
+Prueba,19.648,4.4326,3.5839,0.9319
